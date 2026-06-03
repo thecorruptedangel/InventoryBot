@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: inventorybot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: BOT_TOKEN
+        sync: false                 # paste your BotFather token (Render dashboard)
+      - key: SPREADSHEET_ID
+        sync: false                 # paste your Google Sheet ID
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false                 # paste full service_account.json contents
+      - key: WEBHOOK_SECRET
+        generateValue: true         # stable random secret for webhook verification
+      # WEBAPP_URL is auto-derived from RENDER_EXTERNAL_URL — no need to set it.

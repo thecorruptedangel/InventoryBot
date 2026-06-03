@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Inventory</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Sticky header -->
+    <header id="topbar">
+      <div class="tabs">
+        <button class="tab active" data-tab="list">Items</button>
+        <button class="tab" data-tab="order">To Order <span id="orderCount" class="badge"></span></button>
+        <button id="refreshBtn" class="icon-btn" title="Refresh">⟳</button>
+      </div>
+      <input id="search" class="search" type="search" placeholder="Search items…" autocomplete="off" />
+      <div id="colChips" class="chips"></div>
+      <div id="supChips" class="chips chips-sub"></div>
+      <div id="controls" class="controls">
+        <button id="daysBtn" class="pill" title="Plan for N days">📅 …</button>
+        <button id="needsBtn" class="pill" title="Only items to order">⚠ Needs order</button>
+        <button id="sortBtn" class="pill" title="Sort">↕ Sheet</button>
+      </div>
+    </header>
+
+    <!-- Views -->
+    <main id="listView" class="view"></main>
+    <main id="orderView" class="view hidden"></main>
+
+    <!-- States -->
+    <div id="loading" class="overlay"><div class="spinner"></div></div>
+    <div id="errorBox" class="overlay hidden"></div>
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Inline edit sheet -->
+    <div id="sheet" class="sheet hidden">
+      <div class="sheet-backdrop"></div>
+      <div class="sheet-card" id="sheetCard"></div>
+    </div>
+
+    <!-- Item detail sheet -->
+    <div id="detail" class="sheet hidden">
+      <div class="sheet-backdrop"></div>
+      <div class="sheet-card" id="detailCard"></div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

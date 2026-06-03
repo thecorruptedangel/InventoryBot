@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.env.*
+*.log
+# secrets — never commit
+token.txt
+sheet_id.txt
+service_account.json
+driveload-*.json
+*.iam.gserviceaccount.com.json

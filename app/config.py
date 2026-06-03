@@ -81,12 +81,13 @@ WEBAPP_URL = (
 ).rstrip("/")
 
 # Secret token Telegram echoes back on each webhook call (anti-spoof).
-# Stable per bot token so setWebhook + verification agree without extra config.
-WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET") or (
-    hashlib.sha256(("whsec:" + BOT_TOKEN).encode()).hexdigest()[:32]
-    if BOT_TOKEN
-    else "dev-secret"
+# Telegram only allows [A-Za-z0-9_-] in secret_token, but Render's generated
+# secret may contain other chars — so hash whatever we get into a valid 64-hex
+# string. Same value is used to register the webhook and to verify it.
+_raw_webhook_secret = os.environ.get("WEBHOOK_SECRET") or (
+    ("whsec:" + BOT_TOKEN) if BOT_TOKEN else "dev-secret"
 )
+WEBHOOK_SECRET = hashlib.sha256(_raw_webhook_secret.encode()).hexdigest()
 
 INITDATA_MAX_AGE = int(os.environ.get("INITDATA_MAX_AGE", str(24 * 3600)))
 

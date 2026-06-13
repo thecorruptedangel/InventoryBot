@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime
 import logging
 import os
 
@@ -12,7 +13,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, sheets, telegram
+from . import config, planning, sheets, telegram
 from .auth import AuthError, authorize
 
 logging.basicConfig(level=logging.INFO)
@@ -117,13 +118,52 @@ async def api_cell(request: Request, user=Depends(current_user)):
     return result
 
 
+@app.get("/api/holidays")
+async def api_holidays(request: Request, user=Depends(current_user)):
+    qp = request.query_params
+    try:
+        d0 = datetime.date.fromisoformat(qp["from"])
+        d1 = datetime.date.fromisoformat(qp["to"])
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=400, detail="Expected ?from=YYYY-MM-DD&to=YYYY-MM-DD")
+    hol = planning.holidays_in_range(d0, d1)
+    return {"holidays": [{"date": d.isoformat(), "name": n} for d, n in hol]}
+
+
 @app.post("/api/planning")
 async def api_planning(request: Request, user=Depends(current_user)):
     body = await request.json()
+
+    # Preferred: a date range -> effective days = inclusive count minus DE holidays.
+    if body.get("start") and body.get("end"):
+        try:
+            d0, d1, total, hol = planning.effective_days(body["start"], body["end"])
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Bad start/end (expect YYYY-MM-DD)")
+        effective = total - len(hol)
+        if effective < 1:
+            raise HTTPException(status_code=400, detail="Range has no working days after holidays")
+        try:
+            saved = sheets.set_planning_days(effective)
+        except sheets.SheetError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        log.info("user %s set planning %s..%s = %s days (%s holidays)",
+                 user.get("id"), d0, d1, saved, len(hol))
+        return {
+            "ok": True,
+            "planningDays": saved,
+            "totalDays": total,
+            "holidaysExcluded": len(hol),
+            "holidayDates": [d.isoformat() for d, _ in hol],
+            "start": d0.isoformat(),
+            "end": d1.isoformat(),
+        }
+
+    # Back-compat: a raw day count.
     try:
         days = int(body["days"])
     except (KeyError, ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="Expected {days:int}")
+        raise HTTPException(status_code=400, detail="Expected {start,end} or {days:int}")
     try:
         saved = sheets.set_planning_days(days)
     except sheets.SheetError as exc:

@@ -55,6 +55,10 @@ EXCLUDED_COLS = {"M"}
 # derives from this one cell. Editing it re-drives the whole order list.
 PLANNING_CELL = "K1"
 
+# German Bundesland for public-holiday calculation (poke-bowl shop + suppliers
+# are Munich-based -> Bavaria). Any holidays-lib subdiv code, e.g. BY, BE, NW.
+GERMAN_STATE = os.environ.get("GERMAN_STATE", "BY")
+
 GRID_CACHE_TTL = 30    # seconds; also invalidated on every write
 
 

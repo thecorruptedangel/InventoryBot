@@ -520,46 +520,142 @@
     backdrop("#sheet");
   }
 
-  function openDaysEditor() {
-    let buf = String(state.planningDays != null ? state.planningDays : 20);
-    let html = '<div class="sheet-title">Planning horizon (applies to all items)</div>';
-    html += '<div class="sheet-item">Plan for N days</div>';
-    html += '<div class="stepper"><button data-step="-1">−</button>' +
-      '<div class="cur" id="curVal">' + buf + '</div><button data-step="1">+</button></div>';
-    html += '<div class="pad">' +
-      ["1","2","3","4","5","6","7","8","9","","0","⌫"]
-        .map((k) => k === "" ? "<span></span>" : '<button data-key="' + k + '">' + k + "</button>").join("") +
-      "</div>";
-    html += '<div class="preview">Changes the master Days cell — recomputes every item\'s order need.</div>';
-    html += '<button class="save-btn" id="saveBtn">Save</button>';
-    $("#sheetCard").innerHTML = html;
+  // ---------- date / holiday helpers ----------
+  function ymd(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function parseYmd(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
+  function fmtShort(d) { return d.toLocaleDateString(undefined, { day: "numeric", month: "short" }); }
+  function daysBetween(d0, d1) { return Math.round((d1 - d0) / 86400000) + 1; }
+
+  let holidayMap = null;  // { "YYYY-MM-DD": name }
+  async function loadHolidays() {
+    if (holidayMap) return holidayMap;
+    const y = new Date().getFullYear();
+    holidayMap = {};
+    try {
+      const r = await api("/api/holidays?from=" + y + "-01-01&to=" + (y + 2) + "-12-31");
+      r.holidays.forEach((h) => { holidayMap[h.date] = h.name; });
+    } catch (_) {}
+    return holidayMap;
+  }
+
+  function loadRange() { try { return JSON.parse(localStorage.getItem("planRange") || "null"); } catch (_) { return null; } }
+  function saveRange(r) {
+    const s = JSON.stringify(r);
+    try { localStorage.setItem("planRange", s); } catch (_) {}
+    try { tg.CloudStorage && tg.CloudStorage.setItem("planRange", s, () => {}); } catch (_) {}
+  }
+
+  // ---------- calendar planning picker ----------
+  const cal = { month: null, start: null, end: null };
+
+  async function openCalendarPicker() {
+    await loadHolidays();
+    const saved = loadRange();
+    cal.start = saved && saved.start ? saved.start : null;
+    cal.end = saved && saved.end ? saved.end : null;
+    const base = cal.start ? parseYmd(cal.start) : new Date();
+    cal.month = new Date(base.getFullYear(), base.getMonth(), 1);
+
+    $("#sheetCard").innerHTML =
+      '<div class="sheet-title">Planning period</div>' +
+      '<div class="cal-nav"><button id="calPrev" class="cal-arrow">‹</button>' +
+      '<div id="calLabel" class="cal-label"></div>' +
+      '<button id="calNext" class="cal-arrow">›</button></div>' +
+      '<div class="cal-dow">' + ["Mo","Tu","We","Th","Fr","Sa","Su"].map((d) => "<span>" + d + "</span>").join("") + "</div>" +
+      '<div id="calGrid" class="cal-grid"></div>' +
+      '<div class="cal-legend"><span class="dot hol"></span>German holiday (excluded)</div>' +
+      '<div class="preview" id="calSummary"></div>' +
+      '<button class="save-btn" id="saveBtn">Save</button>';
     show("#sheet");
-    const upd = () => { $("#curVal").textContent = buf === "" ? "0" : buf; };
-    $("#sheetCard").querySelectorAll("[data-step]").forEach((b) =>
-      b.onclick = () => { buf = String(Math.max(1, (parseInt(buf, 10) || 0) + parseInt(b.dataset.step, 10))); upd(); haptic("tick"); });
-    $("#sheetCard").querySelectorAll("[data-key]").forEach((b) =>
-      b.onclick = () => {
-        const k = b.dataset.key;
-        if (k === "⌫") buf = buf.length > 1 ? buf.slice(0, -1) : "";
-        else buf = (buf === "0" || buf === "") ? k : buf + k;
-        upd(); haptic("tick");
-      });
-    $("#saveBtn").onclick = async () => {
-      const days = parseInt(buf, 10);
-      if (!days || days < 1) { toast("Enter a valid number", true); return; }
-      $("#saveBtn").disabled = true;
-      try {
-        const res = await api("/api/planning", { method: "POST", body: { days } });
-        state.planningDays = res.planningDays;
-        haptic("ok"); toast("Planning set to " + res.planningDays + " days");
-        closeSheet("#sheet");
-        await silentRefresh();   // recompute every item's order math, no spinner/scroll jump
-      } catch (e) {
-        haptic("err"); toast(e.message, true);
-        $("#saveBtn").disabled = false;
-      }
-    };
+    $("#calPrev").onclick = () => { cal.month = new Date(cal.month.getFullYear(), cal.month.getMonth() - 1, 1); renderCalendar(); };
+    $("#calNext").onclick = () => { cal.month = new Date(cal.month.getFullYear(), cal.month.getMonth() + 1, 1); renderCalendar(); };
+    $("#saveBtn").onclick = saveCalendar;
+    renderCalendar();
     backdrop("#sheet");
+  }
+
+  function renderCalendar() {
+    $("#calLabel").textContent = cal.month.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const y = cal.month.getFullYear(), m = cal.month.getMonth();
+    const first = new Date(y, m, 1);
+    const lead = (first.getDay() + 6) % 7;            // Monday-first offset
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const s = cal.start ? parseYmd(cal.start) : null;
+    const e = cal.end ? parseYmd(cal.end) : null;
+
+    let html = "";
+    for (let i = 0; i < lead; i++) html += '<span class="cal-cell empty"></span>';
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(y, m, day);
+      const iso = ymd(d);
+      const past = d < today;
+      const hol = !!holidayMap[iso];
+      const isStart = s && iso === cal.start;
+      const isEnd = e && iso === cal.end;
+      const inRange = s && e && d >= s && d <= e;
+      const cls = ["cal-cell"];
+      if (past) cls.push("disabled");
+      if (hol) cls.push("hol");
+      if (inRange) cls.push("in");
+      if (isStart) cls.push("start");
+      if (isEnd) cls.push("end");
+      if (iso === ymd(today)) cls.push("today");
+      html += '<button class="' + cls.join(" ") + '" data-iso="' + iso + '"' + (past ? " disabled" : "") +
+        ' title="' + (hol ? escapeAttr(holidayMap[iso]) : "") + '">' + day + "</button>";
+    }
+    $("#calGrid").innerHTML = html;
+    $("#calGrid").querySelectorAll(".cal-cell:not(.empty):not(.disabled)").forEach((b) =>
+      b.onclick = () => { pickDay(b.dataset.iso); haptic("tick"); });
+    updateSummary();
+  }
+
+  function pickDay(iso) {
+    if (!cal.start || (cal.start && cal.end)) { cal.start = iso; cal.end = null; }
+    else if (parseYmd(iso) < parseYmd(cal.start)) { cal.start = iso; cal.end = null; }
+    else { cal.end = iso; }
+    renderCalendar();
+  }
+
+  function summary() {
+    if (!cal.start) return { ok: false, text: "Pick a start date" };
+    if (!cal.end) return { ok: false, text: "Pick an end date" };
+    const d0 = parseYmd(cal.start), d1 = parseYmd(cal.end);
+    const total = daysBetween(d0, d1);
+    let hol = 0, cur = new Date(d0);
+    while (cur <= d1) { if (holidayMap[ymd(cur)]) hol++; cur.setDate(cur.getDate() + 1); }
+    const eff = total - hol;
+    return {
+      ok: eff >= 1, days: eff,
+      text: fmtShort(d0) + " – " + fmtShort(d1) + " · <b>" + eff + " days</b>" +
+        (hol ? " (" + hol + " holiday" + (hol > 1 ? "s" : "") + " excluded)" : ""),
+    };
+  }
+
+  function updateSummary() {
+    const s = summary();
+    $("#calSummary").innerHTML = s.text;
+    $("#saveBtn").disabled = !s.ok;
+  }
+
+  async function saveCalendar() {
+    const s = summary();
+    if (!s.ok) return;
+    $("#saveBtn").disabled = true;
+    try {
+      const res = await api("/api/planning", { method: "POST", body: { start: cal.start, end: cal.end } });
+      state.planningDays = res.planningDays;
+      saveRange({ start: res.start, end: res.end });
+      haptic("ok");
+      toast("Planning: " + res.planningDays + " days" + (res.holidaysExcluded ? " (" + res.holidaysExcluded + " holiday excl.)" : ""));
+      closeSheet("#sheet");
+      await silentRefresh();
+    } catch (e) {
+      haptic("err"); toast(e.message, true);
+      $("#saveBtn").disabled = false;
+    }
   }
 
   function previewFormula(it, letter, newVal) {
@@ -622,7 +718,7 @@
         render();
       });
     $("#refreshBtn").onclick = () => { haptic("tick"); load(true); };
-    $("#daysBtn").onclick = () => openDaysEditor();
+    $("#daysBtn").onclick = () => openCalendarPicker();
     $("#needsBtn").onclick = () => { state.needsOnly = !state.needsOnly; renderControls(); if (state.tab === "list") renderList(); haptic("tick"); };
     $("#sortBtn").onclick = () => {
       state.sort = SORTS[(SORTS.indexOf(state.sort) + 1) % SORTS.length];

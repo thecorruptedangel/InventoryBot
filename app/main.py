@@ -10,7 +10,7 @@ import os
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config, planning, sheets, telegram
@@ -86,7 +86,10 @@ async def healthz():
 
 @app.get("/app")
 async def miniapp():
-    return FileResponse(os.path.join(config.STATIC_DIR, "index.html"))
+    with open(os.path.join(config.STATIC_DIR, "index.html"), encoding="utf-8") as fh:
+        html = fh.read().replace("__VERSION__", config.VERSION)
+    # Never cache the shell; versioned asset URLs handle the rest.
+    return HTMLResponse(html, headers={"Cache-Control": "no-store, max-age=0"})
 
 
 # --- api --------------------------------------------------------------------

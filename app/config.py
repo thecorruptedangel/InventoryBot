@@ -11,6 +11,12 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
+# Cache-buster for static assets so Telegram's webview reloads them each deploy.
+# Render injects RENDER_GIT_COMMIT; fall back to process start time locally.
+import time as _time  # noqa: E402
+
+VERSION = (os.environ.get("RENDER_GIT_COMMIT") or str(int(_time.time())))[:12]
+
 
 # --- access control ---------------------------------------------------------
 # Hardcoded allowlist of Telegram user IDs. Add more by extending this list.

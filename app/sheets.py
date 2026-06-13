@@ -226,18 +226,9 @@ def set_cell(row: int, col_letter_ref: str, value, force: bool = False) -> dict:
     ws = worksheet()
     a1 = f"{col_letter_ref}{row}"
 
-    # Per-cell guard: even within an input column a single cell may hold a
-    # formula (e.g. "=1/5"). Don't silently flatten it unless force.
-    if not force:
-        try:
-            existing = ws.get(a1, value_render_option="FORMULA")
-            raw = existing[0][0] if existing and existing[0] else ""
-        except Exception:  # noqa: BLE001 - non-fatal; fall through to write
-            raw = ""
-        if isinstance(raw, str) and raw.startswith("="):
-            raise FormulaCellError(
-                f"{a1} currently holds a formula ({raw}); pass force to overwrite."
-            )
+    # Note: computed columns are already blocked above. Within an INPUT column a
+    # stray cell may hold a convenience formula (e.g. Cuscus Qty "=1/5");
+    # overwriting it with a real value is intended, so no per-cell guard here.
 
     try:
         ws.update(a1, [[_coerce(value)]], value_input_option="USER_ENTERED")

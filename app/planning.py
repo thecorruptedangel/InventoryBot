@@ -13,6 +13,11 @@ def _calendar(years):
     return _holidays.country_holidays("DE", subdiv=config.GERMAN_STATE, years=list(years))
 
 
+def calendar(years):
+    """Public: a DE holidays object for membership tests (date in cal)."""
+    return _calendar(years)
+
+
 def holidays_in_range(d0: _dt.date, d1: _dt.date) -> list[tuple[_dt.date, str]]:
     """German public holidays between d0 and d1 inclusive, as (date, name)."""
     cal = _calendar(range(d0.year, d1.year + 1))

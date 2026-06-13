@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, planning, sheets, telegram
+from . import botconfig, config, planning, predict, sheets, telegram
 from .auth import AuthError, authorize
 
 logging.basicConfig(level=logging.INFO)
@@ -119,6 +119,41 @@ async def api_cell(request: Request, user=Depends(current_user)):
         raise HTTPException(status_code=502, detail=str(exc))
     log.info("user %s set %s%s = %r", user.get("id"), col, row, value)
     return result
+
+
+@app.get("/api/predict")
+async def api_predict(user=Depends(current_user)):
+    try:
+        grid = sheets.get_grid()
+        cfg = botconfig.get_config()
+    except sheets.SheetError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return predict.predict(grid, cfg)
+
+
+@app.get("/api/order-config")
+async def api_order_config(user=Depends(current_user)):
+    try:
+        grid = sheets.get_grid()
+        cfg = botconfig.get_config()
+    except sheets.SheetError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    suppliers = sorted({i["source"] for i in grid["items"] if i["source"]})
+    return {"suppliers": suppliers, "config": cfg}
+
+
+@app.post("/api/order-config")
+async def api_set_order_config(request: Request, user=Depends(current_user)):
+    body = await request.json()
+    mapping = body.get("config")
+    if not isinstance(mapping, dict):
+        raise HTTPException(status_code=400, detail="Expected {config: {supplier:{days,lead}}}")
+    try:
+        saved = botconfig.set_config(mapping)
+    except sheets.SheetError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    log.info("user %s updated order-config (%d suppliers)", user.get("id"), len(saved))
+    return {"ok": True, "config": saved}
 
 
 @app.get("/api/holidays")

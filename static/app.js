@@ -31,7 +31,10 @@
     sort: "sheet",
     tab: "list",
     gathered: new Set(),  // item rows ticked off this shopping session (not saved)
+    predict: null,        // /api/predict result, lazily loaded
   };
+
+  const WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   // ---------- telegram boot ----------
   function boot() {
@@ -236,19 +239,24 @@
 
   // Hide pills that don't apply to the current tab.
   function applyTabUi() {
-    const order = state.tab === "order";
-    $("#colChips").classList.toggle("hidden", order);
-    $("#needsBtn").classList.toggle("hidden", order);
-    $("#sortBtn").classList.toggle("hidden", order);
-    $("#search").placeholder = order ? "Search order…" : "Search items…";
+    const t = state.tab;
+    $("#colChips").classList.toggle("hidden", t !== "list");
+    $("#supChips").classList.toggle("hidden", t === "predict");
+    $("#needsBtn").classList.toggle("hidden", t !== "list");
+    $("#sortBtn").classList.toggle("hidden", t !== "list");
+    $("#daysBtn").classList.toggle("hidden", t === "predict");
+    $("#orderCfgBtn").classList.toggle("hidden", t !== "predict");
+    $("#search").placeholder = t === "order" ? "Search order…" : t === "predict" ? "Search predict…" : "Search items…";
   }
 
   // ---------- render ----------
   function render() {
     const orderItems = state.items.filter((i) => i.orderable > 0);
     $("#orderCount").textContent = orderItems.length ? String(orderItems.length) : "";
+    if (state.predict) $("#riskCount").textContent = state.predict.atRiskCount ? String(state.predict.atRiskCount) : "";
     applyTabUi();
     if (state.tab === "order") { renderOrder(orderItems); return; }
+    if (state.tab === "predict") { renderPredict(); return; }
     renderList();
   }
 
@@ -424,6 +432,152 @@
     } else {
       writeClip(text, "Copied (share not supported)");
     }
+  }
+
+  // ---------- predict ----------
+  function fmtDateIso(iso) { return iso ? fmtShort(parseYmd(iso)) : "—"; }
+  function gridRow(row) { return state.items.find((x) => x.row === row); }
+
+  async function loadPredict() {
+    try {
+      state.predict = await api("/api/predict");
+    } catch (e) {
+      toast(e.message, true);
+      state.predict = { items: [], suppliers: {}, atRiskCount: 0, today: ymd(new Date()) };
+    }
+  }
+
+  function predictSection(title, list, noData) {
+    const card = document.createElement("div");
+    card.className = "order-card";
+    const head = document.createElement("div");
+    head.className = "order-card-head";
+    head.innerHTML = "<span>" + escapeHtml(title) + "</span><span class='cnt'>" + list.length + "</span>";
+    card.appendChild(head);
+    list.forEach((it) => {
+      const line = document.createElement("div");
+      line.className = "order-line";
+      const badge = document.createElement("div");
+      badge.className = "qbadge pred";
+      badge.textContent = noData ? "—" : fmt(it.stockDays) + "d";
+      const txt = document.createElement("div");
+      txt.className = "txt";
+      txt.innerHTML = "<div class='nm'>" + escapeHtml(it.name) + "</div><div class='sub'>" +
+        escapeHtml((it.source || "") + (noData ? " · no utilization" : " · no order days set")) + "</div>";
+      line.append(badge, txt);
+      const g = gridRow(it.row);
+      if (g) line.onclick = () => openDetail(g);
+      card.appendChild(line);
+    });
+    return card;
+  }
+
+  function renderPredict() {
+    hide("#listView"); hide("#orderView"); show("#predictView");
+    const view = $("#predictView");
+    view.innerHTML = "";
+    const p = state.predict;
+    if (!p) { view.innerHTML = '<div class="empty">Loading…</div>'; return; }
+
+    const q = state.search.trim().toLowerCase();
+    const items = p.items.filter((it) => !q || it.name.toLowerCase().includes(q));
+
+    const sum = document.createElement("div");
+    sum.className = "order-summary";
+    sum.innerHTML = "<span><b>" + p.atRiskCount + "</b> at risk before next order</span>" +
+      '<span class="prog">' + WD[p.weekday] + " " + fmtDateIso(p.today) + "</span>";
+    view.appendChild(sum);
+
+    const groups = {}, noData = [], noSched = [];
+    items.forEach((it) => {
+      if (!it.hasData) return noData.push(it);
+      if (!it.scheduled) return noSched.push(it);
+      (groups[it.source] = groups[it.source] || []).push(it);
+    });
+    Object.values(groups).forEach((a) => a.sort((x, y) => (y.atRisk - x.atRisk) || (x.stockDays - y.stockDays)));
+
+    if (!Object.keys(groups).length && !noSched.length && !noData.length) {
+      view.innerHTML += '<div class="empty">Nothing to show.</div>';
+    }
+    if (!Object.keys(groups).length && (noSched.length || noData.length)) {
+      const tip = document.createElement("div");
+      tip.className = "empty";
+      tip.innerHTML = "No supplier schedules yet.<br>Tap <b>⚙ Order days</b> to set when each supplier can be ordered.";
+      view.appendChild(tip);
+    }
+
+    Object.keys(groups).sort().forEach((src) => {
+      const sup = p.suppliers[src] || {};
+      const card = document.createElement("div");
+      card.className = "order-card";
+      const head = document.createElement("div");
+      head.className = "order-card-head";
+      const daysTxt = (sup.days || []).map((d) => WD[d]).join(", ") || "—";
+      head.innerHTML = "<span>" + escapeHtml(src) + "</span>" +
+        "<span class='cnt sched'>" + escapeHtml(daysTxt) + " · " + fmtDateIso(sup.nextOrder) + "</span>";
+      card.appendChild(head);
+      groups[src].forEach((it) => {
+        const line = document.createElement("div");
+        line.className = "order-line";
+        const badge = document.createElement("div");
+        badge.className = "qbadge pred" + (it.atRisk ? " risk" : "");
+        badge.textContent = fmt(it.stockDays) + "d";
+        const txt = document.createElement("div");
+        txt.className = "txt";
+        const sub = it.atRisk
+          ? "⚠ out in " + it.runOutDays + "d · order ~" + it.suggest + (it.unit ? " " + it.unit : "")
+          : "ok" + (it.suggest > 0 ? " · reorder ~" + it.suggest : "") + " · next " + fmtDateIso(it.nextOrder);
+        txt.innerHTML = "<div class='nm'>" + escapeHtml(it.name) + "</div><div class='sub'>" + escapeHtml(sub) + "</div>";
+        line.append(badge, txt);
+        const g = gridRow(it.row);
+        if (g) line.onclick = () => openEdit(g, QTY_COL);   // fix stock fast
+        card.appendChild(line);
+      });
+      view.appendChild(card);
+    });
+
+    if (noSched.length) view.appendChild(predictSection("No order schedule", noSched, false));
+    if (noData.length) view.appendChild(predictSection("No utilization data", noData, true));
+  }
+
+  async function openOrderConfig() {
+    let data;
+    try { data = await api("/api/order-config"); } catch (e) { toast(e.message, true); return; }
+    const cfg = data.config || {}, sups = data.suppliers || [];
+    let html = '<div class="sheet-title">Ordering days per supplier</div>' +
+      '<div class="preview">Pick the weekdays each supplier accepts orders, and delivery lead days.</div>' +
+      '<div class="cfg-list">';
+    sups.forEach((s) => {
+      const c = cfg[s] || { days: [], lead: 0 };
+      html += '<div class="cfg-sup" data-sup="' + escapeAttr(s) + '">' +
+        '<div class="cfg-name">' + escapeHtml(s) + "</div>" +
+        '<div class="cfg-days">' +
+        WD.map((w, i) => '<button class="wd' + ((c.days || []).includes(i) ? " on" : "") + '" data-d="' + i + '">' + w.slice(0, 2) + "</button>").join("") +
+        "</div>" +
+        '<div class="cfg-lead">Lead <input type="number" min="0" max="30" value="' + (c.lead || 0) + '" class="lead-inp" /> d</div>' +
+        "</div>";
+    });
+    html += "</div><button class=\"save-btn\" id=\"saveBtn\">Save schedules</button>";
+    $("#sheetCard").innerHTML = html;
+    show("#sheet");
+    $("#sheetCard").querySelectorAll(".wd").forEach((b) =>
+      b.onclick = () => { b.classList.toggle("on"); haptic("tick"); });
+    $("#saveBtn").onclick = async () => {
+      const mapping = {};
+      $("#sheetCard").querySelectorAll(".cfg-sup").forEach((row) => {
+        const days = [...row.querySelectorAll(".wd.on")].map((b) => parseInt(b.dataset.d, 10));
+        const lead = Math.max(0, parseInt(row.querySelector(".lead-inp").value, 10) || 0);
+        mapping[row.dataset.sup] = { days, lead };
+      });
+      $("#saveBtn").disabled = true;
+      try {
+        await api("/api/order-config", { method: "POST", body: { config: mapping } });
+        haptic("ok"); toast("Schedules saved");
+        closeSheet("#sheet");
+        await loadPredict(); render();
+      } catch (e) { haptic("err"); toast(e.message, true); $("#saveBtn").disabled = false; }
+    };
+    backdrop("#sheet");
   }
 
   // ---------- edit sheet ----------
@@ -697,6 +851,7 @@
       if (res.values.A !== undefined) it.name = String(res.values.A).trim();
       if (res.values.E !== undefined) it.source = String(res.values.E).trim();
       lastSig = sigOf(state.items, state.planningDays);
+      if (state.tab === "predict") loadPredict().then(render);   // recompute risk after stock edit
       haptic("ok");
       toast("Saved");
       return true;
@@ -711,14 +866,20 @@
   // ---------- ui plumbing ----------
   function wireUi() {
     document.querySelectorAll(".tab").forEach((t) =>
-      t.onclick = () => {
+      t.onclick = async () => {
         document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
         t.classList.add("active");
         state.tab = t.dataset.tab;
+        if (state.tab === "predict" && !state.predict) { applyTabUi(); await loadPredict(); }
         render();
       });
-    $("#refreshBtn").onclick = () => { haptic("tick"); load(true); };
+    $("#refreshBtn").onclick = async () => {
+      haptic("tick");
+      if (state.tab === "predict") { await loadPredict(); render(); }
+      else await load(true);
+    };
     $("#daysBtn").onclick = () => openCalendarPicker();
+    $("#orderCfgBtn").onclick = () => openOrderConfig();
     $("#needsBtn").onclick = () => { state.needsOnly = !state.needsOnly; renderControls(); if (state.tab === "list") renderList(); haptic("tick"); };
     $("#sortBtn").onclick = () => {
       state.sort = SORTS[(SORTS.indexOf(state.sort) + 1) % SORTS.length];

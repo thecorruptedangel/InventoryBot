@@ -27,24 +27,40 @@ class FormulaCellError(SheetError):
 
 
 # --- connection (lazy singleton) -------------------------------------------
-_ws_lock = threading.Lock()
+_conn_lock = threading.Lock()
+_ss = None
 _ws = None
 
 
-def worksheet():
-    global _ws
-    with _ws_lock:
-        if _ws is not None:
-            return _ws
+def spreadsheet():
+    """The opened Spreadsheet (cached). Used for extra tabs like BotConfig."""
+    global _ss
+    with _conn_lock:
+        if _ss is not None:
+            return _ss
         info = config.service_account_info()
         try:
             if info:
                 gc = gspread.service_account_from_dict(info)
             else:
                 gc = gspread.service_account(filename=config.service_account_file())
-            _ws = gc.open_by_key(config.SPREADSHEET_ID).get_worksheet(config.WORKSHEET_INDEX)
+            _ss = gc.open_by_key(config.SPREADSHEET_ID)
         except Exception as exc:  # noqa: BLE001 - surface a clean error to API layer
             raise SheetError(f"Cannot open sheet: {exc}") from exc
+        return _ss
+
+
+def worksheet():
+    global _ws
+    with _conn_lock:
+        if _ws is not None:
+            return _ws
+    try:
+        ws = spreadsheet().get_worksheet(config.WORKSHEET_INDEX)
+    except Exception as exc:  # noqa: BLE001
+        raise SheetError(f"Cannot open worksheet: {exc}") from exc
+    with _conn_lock:
+        _ws = ws
         return _ws
 
 

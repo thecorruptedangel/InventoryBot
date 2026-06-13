@@ -14,6 +14,7 @@
       <div class="tabs">
         <button class="tab active" data-tab="list">Items</button>
         <button class="tab" data-tab="order">To Order <span id="orderCount" class="badge"></span></button>
+        <button class="tab" data-tab="predict">Predict <span id="riskCount" class="badge"></span></button>
         <button id="refreshBtn" class="icon-btn" title="Refresh">⟳</button>
       </div>
       <input id="search" class="search" type="search" placeholder="Search items…" autocomplete="off" />
@@ -23,12 +24,14 @@
         <button id="daysBtn" class="pill" title="Plan for N days">📅 …</button>
         <button id="needsBtn" class="pill" title="Only items to order">⚠ Needs order</button>
         <button id="sortBtn" class="pill" title="Sort">↕ Sheet</button>
+        <button id="orderCfgBtn" class="pill" title="Configure ordering days">⚙ Order days</button>
       </div>
     </header>
 
     <!-- Views -->
     <main id="listView" class="view"></main>
     <main id="orderView" class="view hidden"></main>
+    <main id="predictView" class="view hidden"></main>
 
     <!-- States -->
     <div id="loading" class="overlay"><div class="spinner"></div></div>

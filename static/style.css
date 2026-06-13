@@ -150,7 +150,8 @@ body {
 .sheet { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; }
 .sheet-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.4); }
 .sheet-card {
-  position: relative; width: 100%; max-height: 88vh; overflow-y: auto;
+  position: relative; width: 100%; max-width: 520px; margin: 0 auto;
+  max-height: 88vh; overflow-y: auto;
   background: var(--bg); border-radius: 16px 16px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
   animation: rise .18s ease-out;
 }
@@ -188,8 +189,9 @@ body {
 .cal-dow span { text-align: center; font-size: 12px; font-weight: 600; color: var(--hint); padding: 4px 0; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 4px; column-gap: 0; }
 .cal-cell {
-  aspect-ratio: 1 / 1; border: none; background: transparent; color: var(--text);
-  font-size: 15px; font-weight: 600; border-radius: 10px; position: relative;
+  height: 44px; display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--text);
+  font-size: 15px; font-weight: 600; border-radius: 10px; position: relative; padding: 0;
 }
 .cal-cell.empty { background: none; }
 .cal-cell.disabled { color: var(--hint); opacity: .35; }

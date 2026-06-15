@@ -261,7 +261,7 @@
   }
 
   function renderList() {
-    show("#listView"); hide("#orderView");
+    show("#listView"); hide("#orderView"); hide("#predictView");
     const view = $("#listView");
     view.innerHTML = "";
     const items = filteredItems();
@@ -301,7 +301,7 @@
   }
 
   function renderOrder(allOrder) {
-    hide("#listView"); show("#orderView");
+    hide("#listView"); show("#orderView"); hide("#predictView");
     const view = $("#orderView");
     view.innerHTML = "";
 

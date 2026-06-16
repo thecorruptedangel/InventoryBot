@@ -23,6 +23,7 @@ VERSION = (os.environ.get("RENDER_GIT_COMMIT") or str(int(_time.time())))[:12]
 WHITELISTED_IDS: list[int] = [
     563381712,
     5639164058,
+    809053431,
 ]
 
 

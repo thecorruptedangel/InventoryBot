@@ -244,6 +244,7 @@
     $("#supChips").classList.toggle("hidden", t === "predict");
     $("#needsBtn").classList.toggle("hidden", t !== "list");
     $("#sortBtn").classList.toggle("hidden", t !== "list");
+    $("#copyQtyBtn").classList.toggle("hidden", t !== "list");
     $("#daysBtn").classList.toggle("hidden", t === "predict");
     $("#orderCfgBtn").classList.toggle("hidden", t !== "predict");
     $("#search").placeholder = t === "order" ? "Search order…" : t === "predict" ? "Search predict…" : "Search items…";
@@ -424,6 +425,16 @@
     toast(msg); haptic("ok");
   }
   function copyOrder(groups) { writeClip(orderText(groups), "Order list copied"); }
+
+  // Copy "item: quantity" for the currently shown items (respects supplier filter/search).
+  function copyQty() {
+    const items = filteredItems();
+    if (!items.length) { toast("Nothing to copy", true); return; }
+    const lines = [];
+    if (state.supplier !== "All") lines.push("— " + state.supplier + " —");
+    items.forEach((it) => lines.push(it.name + ": " + fmt(it.values[QTY_COL])));
+    writeClip(lines.join("\n"), (state.supplier === "All" ? "All" : state.supplier) + " quantities copied");
+  }
   function copySupplier(src, list) { const g = {}; g[src] = list; writeClip(orderText(g), src + " copied"); }
   async function shareOrder(groups) {
     const text = orderText(groups);
@@ -879,6 +890,7 @@
       else await load(true);
     };
     $("#daysBtn").onclick = () => openCalendarPicker();
+    $("#copyQtyBtn").onclick = () => copyQty();
     $("#orderCfgBtn").onclick = () => openOrderConfig();
     $("#needsBtn").onclick = () => { state.needsOnly = !state.needsOnly; renderControls(); if (state.tab === "list") renderList(); haptic("tick"); };
     $("#sortBtn").onclick = () => {
